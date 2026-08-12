@@ -10,6 +10,16 @@ import type { Meeting } from "@/lib/types";
 const MOBILE_VISIBLE_COUNT = 2;
 const REFRESH_MIN_DELAY_MS = 800;
 
+function formatHiddenMeetings(count: number): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${count} встречу`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) {
+    return `${count} встречи`;
+  }
+  return `${count} встреч`;
+}
+
 export function MeetingsList() {
   const [expanded, setExpanded] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -75,14 +85,16 @@ export function MeetingsList() {
                   onClick={() => setSelectedMeeting(meeting)}
                 />
               ))}
-              {!expanded && hiddenCount > 0 ? (
+              {hiddenCount > 0 ? (
                 <button
                   type="button"
-                  onClick={() => setExpanded(true)}
+                  onClick={() => setExpanded(!expanded)}
                   disabled={isRefreshing}
                   className="w-full py-2 text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-60"
                 >
-                  Показать все ({hiddenCount})
+                  {expanded
+                    ? "Свернуть"
+                    : `Показать (ещё ${formatHiddenMeetings(hiddenCount)})`}
                 </button>
               ) : null}
             </div>

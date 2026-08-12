@@ -8,7 +8,7 @@ export type UpdateMeetingPayload = {
   status?: MeetingStatus;
 };
 
-export const meetingsData: Meeting[] = [
+const INITIAL_MEETINGS_DATA: Meeting[] = [
   {
     id: "1",
     title: "Обсуждение проекта",
@@ -40,6 +40,32 @@ export const meetingsData: Meeting[] = [
     status: "scheduled",
   },
 ];
+
+const MEETINGS_STORE_KEY = "__messengerMeetingsStore__";
+
+function cloneMeetings(meetings: Meeting[]): Meeting[] {
+  return meetings.map((meeting) => ({ ...meeting }));
+}
+
+export function getMeetingsStore(): Meeting[] {
+  const globalStore = globalThis as typeof globalThis & {
+    [MEETINGS_STORE_KEY]?: Meeting[];
+  };
+
+  if (!globalStore[MEETINGS_STORE_KEY]) {
+    globalStore[MEETINGS_STORE_KEY] = cloneMeetings(INITIAL_MEETINGS_DATA);
+  }
+
+  return globalStore[MEETINGS_STORE_KEY]!;
+}
+
+export function getMeetings(): Meeting[] {
+  return cloneMeetings(getMeetingsStore());
+}
+
+export function findMeetingIndex(id: string): number {
+  return getMeetingsStore().findIndex((meeting) => meeting.id === id);
+}
 
 export async function fetchMeetings(): Promise<Meeting[]> {
   const response = await fetch("/api/meetings", {
@@ -73,5 +99,5 @@ export async function updateMeeting(
 }
 
 export function getMeetingsForServer(): Meeting[] {
-  return meetingsData;
+  return getMeetings();
 }

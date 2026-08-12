@@ -1,5 +1,5 @@
-import { meetingsData } from "@/lib/meetings";
+import { getMeetings } from "@/lib/meetings";
 
 export async function GET() {
-  return Response.json(meetingsData);
+  return Response.json(getMeetings());
 }

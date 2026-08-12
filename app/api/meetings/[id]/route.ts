@@ -1,4 +1,4 @@
-import { meetingsData } from "@/lib/meetings";
+import { findMeetingIndex, getMeetingsStore } from "@/lib/meetings";
 import type { MeetingStatus } from "@/lib/types";
 
 const validStatuses: MeetingStatus[] = [
@@ -18,14 +18,14 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const meetingIndex = meetingsData.findIndex((meeting) => meeting.id === id);
+  const meetingIndex = findMeetingIndex(id);
 
   if (meetingIndex === -1) {
     return Response.json({ error: "Meeting not found" }, { status: 404 });
   }
 
   const body = (await request.json()) as UpdateMeetingBody;
-  const currentMeeting = meetingsData[meetingIndex];
+  const currentMeeting = getMeetingsStore()[meetingIndex];
 
   if (body.title !== undefined) {
     const title = body.title.trim();
@@ -50,5 +50,5 @@ export async function PATCH(
     currentMeeting.status = body.status;
   }
 
-  return Response.json(currentMeeting);
+  return Response.json({ ...currentMeeting });
 }
