@@ -1,18 +1,34 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { MeetingCard } from "@/components/MeetingCard";
 import { fetchMeetings, MEETINGS_QUERY_KEY } from "@/lib/meetings";
 
 const MOBILE_VISIBLE_COUNT = 2;
+const REFRESH_MIN_DELAY_MS = 800;
 
 export function MeetingsList() {
   const [expanded, setExpanded] = useState(false);
-  const { data, isFetching, refetch, isError, error } = useQuery({
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const { data, refetch, isError, error } = useQuery({
     queryKey: MEETINGS_QUERY_KEY,
     queryFn: fetchMeetings,
   });
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        refetch(),
+        new Promise<void>((resolve) => {
+          setTimeout(resolve, REFRESH_MIN_DELAY_MS);
+        }),
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refetch]);
 
   const meetings = data ?? [];
   const visibleMeetings = expanded
@@ -20,18 +36,22 @@ export function MeetingsList() {
     : meetings.slice(0, MOBILE_VISIBLE_COUNT);
   const hiddenCount = Math.max(meetings.length - MOBILE_VISIBLE_COUNT, 0);
 
+  const listAnimationClass = isRefreshing
+    ? "opacity-50 pointer-events-none animate-pulse"
+    : "opacity-100";
+
   return (
     <section className="flex h-full flex-col rounded-2xl border border-slate-200 bg-slate-50/80">
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 md:px-5">
         <h2 className="text-lg font-semibold text-slate-900">Ваши встречи</h2>
         <button
           type="button"
-          onClick={() => refetch()}
-          disabled={isFetching}
+          onClick={handleRefresh}
+          disabled={isRefreshing}
           className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-blue-600 transition hover:bg-blue-50 disabled:opacity-60"
         >
-          <RefreshIcon spinning={isFetching} />
-          Обновить
+          <RefreshIcon spinning={isRefreshing} />
+          {isRefreshing ? "Обновление..." : "Обновить"}
         </button>
       </div>
 
@@ -42,7 +62,9 @@ export function MeetingsList() {
           </p>
         ) : (
           <>
-            <div className="space-y-3 md:hidden">
+            <div
+              className={`space-y-3 transition-opacity duration-300 md:hidden ${listAnimationClass}`}
+            >
               {visibleMeetings.map((meeting) => (
                 <MeetingCard key={meeting.id} meeting={meeting} />
               ))}
@@ -50,14 +72,17 @@ export function MeetingsList() {
                 <button
                   type="button"
                   onClick={() => setExpanded(true)}
-                  className="w-full py-2 text-sm font-medium text-blue-600 hover:text-blue-700"
+                  disabled={isRefreshing}
+                  className="w-full py-2 text-sm font-medium text-blue-600 hover:text-blue-700 disabled:opacity-60"
                 >
                   Показать все ({hiddenCount})
                 </button>
               ) : null}
             </div>
 
-            <div className="hidden space-y-3 md:block">
+            <div
+              className={`hidden space-y-3 transition-opacity duration-300 md:block ${listAnimationClass}`}
+            >
               {meetings.map((meeting) => (
                 <MeetingCard key={meeting.id} meeting={meeting} />
               ))}
