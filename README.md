@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Чат с консультантом
 
-## Getting Started
+Тестовое задание: мини-страница `/chat` со списком встреч и WebSocket-чатом.
 
-First, run the development server:
+## Стек
+
+- Next.js (App Router)
+- TypeScript
+- TanStack Query
+- Tailwind CSS
+
+## Запуск
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run ws    # терминал 1 — WebSocket echo-сервер на ws://localhost:8081
+npm run dev   # терминал 2 — Next.js на http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Страница чата: [http://localhost:3000/chat](http://localhost:3000/chat)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Архитектурные решения
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Граница Server / Client Components
 
-## Learn More
+| Слой | Файл | Роль |
+|------|------|------|
+| Server | `app/chat/page.tsx` | `prefetchQuery` + `HydrationBoundary` — начальные данные встреч попадают в HTML |
+| Client | `components/MeetingsList.tsx` | `useQuery` + кнопка «Обновить» (`refetch`) без перезагрузки страницы |
+| Client | `components/ChatShell.tsx` | WebSocket, оптимистичная отправка, автопереподключение |
 
-To learn more about Next.js, take a look at the following resources:
+**Почему так:** список встреч рендерится на сервере (SSR client-компонента с prefetched cache) — HTML виден даже при отключённом JS. Интерактив (обновление списка, чат) живёт на клиенте.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+`app/providers.tsx` — Client Component-обёртка с `QueryClientProvider`, подключена в `app/layout.tsx`, потому что TanStack Query требует React Context, а layout по умолчанию — Server Component.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### TanStack Query для SSR
 
-## Deploy on Vercel
+1. Server Component (`app/chat/page.tsx`) вызывает `prefetchQuery` с ключом `["meetings"]`
+2. Состояние передаётся клиенту через `dehydrate` / `HydrationBoundary`
+3. `MeetingsList` использует `useQuery` с тем же ключом — данные уже в кеше, loading-состояния нет
+4. Кнопка «Обновить» вызывает `refetch()` — данные обновляются без reload страницы
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### WebSocket и reconnect
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Echo-сервер: `server.js` (порт 8081, задержка 300 мс, обрыв каждые ~25–35 с)
+- Хук `useWebSocket`: exponential backoff (1s → 2s → 4s → max 10s)
+- Оптимистичная отправка: сообщение сразу в ленте со статусом `sending`
+- При обрыве: pending → `failed`, баннер «Соединение потеряно»
+- После reconnect: failed-сообщения переотправляются автоматически или по кнопке «Повторить»
+
+### Адаптив
+
+- **Desktop (≥1280px):** две колонки — встречи слева (~320px), чат справа
+- **Планшет (768–1279px):** две колонки, компактнее
+- **Мобилка (<768px):** одна колонка, встречи сворачиваются с «Показать все»
+
+## Структура проекта
+
+```
+app/
+  chat/page.tsx       # Server Component — точка входа
+  api/meetings/       # GET /api/meetings — мок-данные
+  providers.tsx       # QueryClientProvider
+components/
+  MeetingsList.tsx    # Список встреч (Client)
+  ChatShell.tsx       # WebSocket + layout страницы (Client)
+  ChatWidget.tsx      # UI чата (Client)
+hooks/
+  useWebSocket.ts     # Подключение и reconnect
+lib/
+  meetings.ts         # Данные и fetch-функции
+  types.ts            # TypeScript-типы
+server.js             # Echo WebSocket сервер
+```
