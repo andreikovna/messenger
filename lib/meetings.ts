@@ -1,6 +1,12 @@
-import type { Meeting } from "@/lib/types";
+import type { Meeting, MeetingStatus } from "@/lib/types";
 
 export const MEETINGS_QUERY_KEY = ["meetings"] as const;
+
+export type UpdateMeetingPayload = {
+  title?: string;
+  date?: string;
+  status?: MeetingStatus;
+};
 
 export const meetingsData: Meeting[] = [
   {
@@ -42,6 +48,25 @@ export async function fetchMeetings(): Promise<Meeting[]> {
 
   if (!response.ok) {
     throw new Error("Не удалось загрузить встречи");
+  }
+
+  return response.json();
+}
+
+export async function updateMeeting(
+  id: string,
+  payload: UpdateMeetingPayload,
+): Promise<Meeting> {
+  const response = await fetch(`/api/meetings/${id}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error("Не удалось сохранить встречу");
   }
 
   return response.json();

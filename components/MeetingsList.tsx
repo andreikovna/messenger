@@ -3,7 +3,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 import { MeetingCard } from "@/components/MeetingCard";
+import { MeetingModal } from "@/components/MeetingModal";
 import { fetchMeetings, MEETINGS_QUERY_KEY } from "@/lib/meetings";
+import type { Meeting } from "@/lib/types";
 
 const MOBILE_VISIBLE_COUNT = 2;
 const REFRESH_MIN_DELAY_MS = 800;
@@ -11,6 +13,7 @@ const REFRESH_MIN_DELAY_MS = 800;
 export function MeetingsList() {
   const [expanded, setExpanded] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const { data, refetch, isError, error } = useQuery({
     queryKey: MEETINGS_QUERY_KEY,
     queryFn: fetchMeetings,
@@ -66,7 +69,11 @@ export function MeetingsList() {
               className={`space-y-3 transition-opacity duration-300 md:hidden ${listAnimationClass}`}
             >
               {visibleMeetings.map((meeting) => (
-                <MeetingCard key={meeting.id} meeting={meeting} />
+                <MeetingCard
+                  key={meeting.id}
+                  meeting={meeting}
+                  onClick={() => setSelectedMeeting(meeting)}
+                />
               ))}
               {!expanded && hiddenCount > 0 ? (
                 <button
@@ -84,12 +91,21 @@ export function MeetingsList() {
               className={`hidden space-y-3 transition-opacity duration-300 md:block ${listAnimationClass}`}
             >
               {meetings.map((meeting) => (
-                <MeetingCard key={meeting.id} meeting={meeting} />
+                <MeetingCard
+                  key={meeting.id}
+                  meeting={meeting}
+                  onClick={() => setSelectedMeeting(meeting)}
+                />
               ))}
             </div>
           </>
         )}
       </div>
+
+      <MeetingModal
+        meeting={selectedMeeting}
+        onClose={() => setSelectedMeeting(null)}
+      />
     </section>
   );
 }
