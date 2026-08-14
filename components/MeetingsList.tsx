@@ -8,6 +8,9 @@ import { fetchMeetings, MEETINGS_QUERY_KEY } from "@/lib/meetings";
 import type { Meeting } from "@/lib/types";
 
 const MOBILE_VISIBLE_COUNT = 2;
+// Искусственная задержка для демо: /api/meetings — локальный мок и отвечает
+// мгновенно, поэтому без неё спиннер "Обновление..." не успевает отрисоваться
+// и непонятно, что refetch вообще произошёл.
 const REFRESH_MIN_DELAY_MS = 800;
 
 function formatHiddenMeetings(count: number): string {

@@ -2,6 +2,8 @@ const { WebSocketServer } = require("ws");
 
 const wss = new WebSocketServer({ port: 8081 });
 
+// Задержка 300 мс и обрыв раз в 25–35 с заданы условием тестового задания —
+// это имитация нестабильной сети, а не наши настройки.
 wss.on("connection", (ws) => {
   ws.on("message", (message) => {
     setTimeout(() => {
