@@ -99,19 +99,19 @@ export function useWebSocket({
     };
   }, [clearReconnectTimeout, connect]);
 
-  const sendMessage = useCallback((text: string) => {
+  const send = useCallback((data: string) => {
     const ws = wsRef.current;
 
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       return false;
     }
 
-    ws.send(text);
+    ws.send(data);
     return true;
   }, []);
 
   return {
     status,
-    sendMessage,
+    send,
   };
 }

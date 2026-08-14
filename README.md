@@ -29,7 +29,7 @@ npm run dev   # терминал 2 — Next.js на http://localhost:3000
 | Server | `app/chat/page.tsx` | `prefetchQuery` + `HydrationBoundary` — начальные данные встреч попадают в HTML |
 | Client | `components/MeetingsList.tsx` | `useQuery`, кнопка «Обновить», открытие модалки редактирования |
 | Client | `components/MeetingModal.tsx` | `useMutation` — форма редактирования встречи |
-| Client | `components/ChatShell.tsx` | WebSocket, оптимистичная отправка, автопереподключение |
+| Client | `components/ChatShell.tsx` | Layout страницы чата; логика в `useChat` / `useWebSocket` |
 
 **Почему так:** список встреч рендерится на сервере (SSR client-компонента с prefetched cache) — HTML виден даже при отключённом JS. Интерактив (обновление списка, редактирование, чат) живёт на клиенте.
 
@@ -54,8 +54,9 @@ npm run dev   # терминал 2 — Next.js на http://localhost:3000
 ### WebSocket и reconnect
 
 - Echo-сервер: `server.js` (порт 8081, задержка 300 мс, обрыв каждые ~25–35 с)
-- Хук `useWebSocket`: exponential backoff (1s → 2s → 4s → max 10s)
-- Оптимистичная отправка: сообщение сразу в ленте со статусом `sending`
+- `useWebSocket` — только transport: connection, reconnect (exponential backoff 1s → 2s → 4s → max 10s), send/receive, status
+- `useChat` — chat logic: messages, optimistic send, ACK, retry, failed/delivered, message IDs
+- `ChatShell` — только UI (layout + прокидывание props)
 - При обрыве: pending → `failed`, баннер «Соединение потеряно»
 - После reconnect: failed-сообщения переотправляются автоматически или по кнопке «Повторить»
 - Статус соединения отображается в `Header` и `ChatWidget` через `ConnectionStatus`
@@ -87,13 +88,14 @@ components/
   MeetingsList.tsx            # Список встреч (Client)
   MeetingCard.tsx             # Карточка встречи
   MeetingModal.tsx            # Модалка редактирования (Client)
-  ChatShell.tsx               # WebSocket + layout страницы (Client)
+  ChatShell.tsx               # Layout страницы чата (Client)
   ChatWidget.tsx              # UI чата (Client)
   MessageBubble.tsx           # Пузырь сообщения
   Header.tsx                  # Шапка страницы
   ConnectionStatus.tsx        # Индикатор WebSocket-соединения
 hooks/
-  useWebSocket.ts             # Подключение и reconnect
+  useWebSocket.ts             # Transport: connection / reconnect / send / receive
+  useChat.ts                  # Chat logic: messages / ACK / retry / statuses
 lib/
   meetings.ts                 # Данные, fetch и update-функции
   types.ts                    # TypeScript-типы
