@@ -7,6 +7,11 @@ import { MeetingsList } from "@/components/MeetingsList";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import type { ChatMessage } from "@/lib/types";
 
+type WireMessage = {
+  id: string;
+  text: string;
+};
+
 function createMessage(
   text: string,
   sender: ChatMessage["sender"],
@@ -21,6 +26,22 @@ function createMessage(
   };
 }
 
+function parseWireMessage(raw: string): WireMessage | null {
+  try {
+    const parsed = JSON.parse(raw) as Partial<WireMessage>;
+    if (
+      typeof parsed?.id === "string" &&
+      typeof parsed?.text === "string" &&
+      parsed.id &&
+      parsed.text
+    ) {
+      return { id: parsed.id, text: parsed.text };
+    }
+  } catch {}
+
+  return null;
+}
+
 export function ChatShell() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     createMessage(
@@ -28,7 +49,7 @@ export function ChatShell() {
       "consultant",
     ),
   ]);
-  const pendingByTextRef = useRef<Map<string, string>>(new Map());
+  const pendingIdsRef = useRef<Set<string>>(new Set());
 
   const markMessageStatus = useCallback(
     (id: string, status: ChatMessage["status"]) => {
@@ -42,18 +63,21 @@ export function ChatShell() {
   );
 
   const handleIncomingMessage = useCallback(
-    (text: string) => {
-      const pendingId = pendingByTextRef.current.get(text);
+    (raw: string) => {
+      const wire = parseWireMessage(raw);
 
-      if (pendingId) {
-        pendingByTextRef.current.delete(text);
-        markMessageStatus(pendingId, "delivered");
+      if (wire && pendingIdsRef.current.has(wire.id)) {
+        pendingIdsRef.current.delete(wire.id);
+        markMessageStatus(wire.id, "delivered");
+        setMessages((current) => [
+          ...current,
+          createMessage(wire.text, "consultant"),
+        ]);
+        return;
       }
 
-      setMessages((current) => [
-        ...current,
-        createMessage(text, "consultant"),
-      ]);
+      const text = wire?.text ?? raw;
+      setMessages((current) => [...current, createMessage(text, "consultant")]);
     },
     [markMessageStatus],
   );
@@ -75,6 +99,7 @@ export function ChatShell() {
       }
     },
     onClose: () => {
+      pendingIdsRef.current.clear();
       setMessages((current) =>
         current.map((message) =>
           message.sender === "user" && message.status === "sending"
@@ -110,10 +135,11 @@ export function ChatShell() {
         markMessageStatus(messageId, "sending");
       }
 
-      const sent = sendMessage(trimmed);
+      const payload: WireMessage = { id: messageId, text: trimmed };
+      const sent = sendMessage(JSON.stringify(payload));
 
       if (sent) {
-        pendingByTextRef.current.set(trimmed, messageId);
+        pendingIdsRef.current.add(messageId);
       } else {
         markMessageStatus(messageId, "failed");
       }
@@ -121,7 +147,9 @@ export function ChatShell() {
     [markMessageStatus, sendMessage],
   );
 
-  sendUserMessageRef.current = sendUserMessage;
+  useEffect(() => {
+    sendUserMessageRef.current = sendUserMessage;
+  }, [sendUserMessage]);
 
   useEffect(() => {
     messagesRef.current = messages;
