@@ -1,103 +1,106 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTimers } from "@/hooks/useTimers";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import type { ChatMessage } from "@/lib/types";
+import { parseWireMessage, serializeWireMessage } from "@/lib/chatWire";
+import type { ChatMessage, MessageStatus } from "@/lib/types";
 
-type WireMessage = {
-  id: string;
-  text: string;
-};
+// Оба таймаута — искусственные, только для наглядности демо.
+// Echo-сервер отвечает за 300 мс, поэтому без них статус "Отправляется"
+// мелькает и оптимистичную отправку на UI не видно.
+// Сеть при этом не тормозим: задерживается только смена статуса на экране.
+const MIN_SENDING_VISIBLE_MS = 800;
+// Пауза между "Доставлено" и ответом консультанта, чтобы ACK успели заметить
+// до того, как в ленту добавится echo.
+const REPLY_AFTER_DELIVERED_MS = 350;
 
-function createMessage(
-  text: string,
-  sender: ChatMessage["sender"],
-  status: ChatMessage["status"] = "delivered",
-): ChatMessage {
+const DELIVER_TIMER = "deliver";
+const REPLY_TIMER = "reply";
+
+const GREETING = "Здравствуйте! Я ваш консультант. Чем могу помочь?";
+
+function createConsultantMessage(text: string): ChatMessage {
   return {
     id: crypto.randomUUID(),
     text,
-    sender,
-    status,
+    sender: "consultant",
+    status: "delivered",
     timestamp: new Date(),
   };
 }
 
-function parseWireMessage(raw: string): WireMessage | null {
-  try {
-    const parsed = JSON.parse(raw) as Partial<WireMessage>;
-    if (
-      typeof parsed?.id === "string" &&
-      typeof parsed?.text === "string" &&
-      parsed.id &&
-      parsed.text
-    ) {
-      return { id: parsed.id, text: parsed.text };
-    }
-  } catch {
-    // Non-JSON payloads are treated as plain text below.
-  }
-
-  return null;
-}
-
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
-    createMessage(
-      "Здравствуйте! Я ваш консультант. Чем могу помочь?",
-      "consultant",
-    ),
+    createConsultantMessage(GREETING),
   ]);
-  const pendingIdsRef = useRef<Set<string>>(new Set());
-  const messagesRef = useRef(messages);
-  const sendUserMessageRef = useRef<(text: string, existingId?: string) => void>(
-    () => {},
-  );
+  // Сообщения, ожидающие ACK: id → время отправки (нужно для MIN_SENDING_VISIBLE_MS).
+  const pendingRef = useRef(new Map<string, number>());
+  const { set: setTimer, clear: clearTimers, clearByName } = useTimers();
 
-  const markMessageStatus = useCallback(
-    (id: string, status: ChatMessage["status"]) => {
-      setMessages((current) =>
-        current.map((message) =>
-          message.id === id ? { ...message, status } : message,
-        ),
-      );
-    },
-    [],
-  );
+  const setMessageStatus = useCallback((id: string, status: MessageStatus) => {
+    setMessages((current) =>
+      current.map((message) =>
+        message.id === id ? { ...message, status } : message,
+      ),
+    );
+  }, []);
+
+  const appendMessage = useCallback((message: ChatMessage) => {
+    setMessages((current) => [...current, message]);
+  }, []);
 
   const handleIncomingMessage = useCallback(
     (raw: string) => {
       const wire = parseWireMessage(raw);
+      const sentAt = wire ? pendingRef.current.get(wire.id) : undefined;
 
-      if (wire && pendingIdsRef.current.has(wire.id)) {
-        pendingIdsRef.current.delete(wire.id);
-        markMessageStatus(wire.id, "delivered");
-        setMessages((current) => [
-          ...current,
-          createMessage(wire.text, "consultant"),
-        ]);
+      if (!wire || sentAt === undefined) {
+        appendMessage(createConsultantMessage(wire?.text ?? raw));
         return;
       }
 
-      const text = wire?.text ?? raw;
-      setMessages((current) => [...current, createMessage(text, "consultant")]);
+      pendingRef.current.delete(wire.id);
+
+      // Придерживаем ACK, чтобы порядок на экране был
+      // "Отправляется" → "Доставлено" → ответ консультанта.
+      const remaining = Math.max(
+        0,
+        MIN_SENDING_VISIBLE_MS - (Date.now() - sentAt),
+      );
+
+      setTimer(
+        wire.id,
+        DELIVER_TIMER,
+        () => {
+          setMessageStatus(wire.id, "delivered");
+          setTimer(
+            wire.id,
+            REPLY_TIMER,
+            () => appendMessage(createConsultantMessage(wire.text)),
+            REPLY_AFTER_DELIVERED_MS,
+          );
+        },
+        remaining,
+      );
     },
-    [markMessageStatus],
+    [appendMessage, setMessageStatus, setTimer],
   );
+
+  // onOpen объявляется раньше, чем в этом рендере появится sendMessage,
+  // поэтому обращаемся к актуальной версии через ref.
+  const flushOutboxRef = useRef<() => void>(() => {});
 
   const { status, send } = useWebSocket({
     onMessage: handleIncomingMessage,
-    onOpen: () => {
-      const failedMessages = messagesRef.current.filter(
-        (message) => message.sender === "user" && message.status === "failed",
-      );
-
-      for (const message of failedMessages) {
-        sendUserMessageRef.current(message.text, message.id);
-      }
-    },
+    onOpen: () => flushOutboxRef.current(),
     onClose: () => {
-      pendingIdsRef.current.clear();
+      pendingRef.current.clear();
+
+      // Отменяем только отложенные "Доставлено" — их ACK больше не актуален.
+      // Таймеры ответа консультанта не трогаем: те сообщения сервер уже принял.
+      clearByName(DELIVER_TIMER);
+
       setMessages((current) =>
         current.map((message) =>
           message.sender === "user" && message.status === "sending"
@@ -111,57 +114,63 @@ export function useChat() {
   const sendMessage = useCallback(
     (text: string, existingId?: string) => {
       const trimmed = text.trim();
+
       if (!trimmed) {
         return;
       }
 
-      const messageId = existingId ?? crypto.randomUUID();
-      const isRetry = Boolean(existingId);
+      const id = existingId ?? crypto.randomUUID();
 
-      if (!isRetry) {
-        setMessages((current) => [
-          ...current,
-          {
-            id: messageId,
-            text: trimmed,
-            sender: "user",
-            status: "sending",
-            timestamp: new Date(),
-          },
-        ]);
-      } else {
-        markMessageStatus(messageId, "sending");
+      // Автоповтор после reconnect и клик по «Повторить» могут совпасть —
+      // второй отправки не делаем, иначе сервер пришлёт echo дважды.
+      if (pendingRef.current.has(id)) {
+        return;
       }
 
-      const payload: WireMessage = { id: messageId, text: trimmed };
-      const sent = send(JSON.stringify(payload));
+      clearTimers(id);
 
-      if (sent) {
-        pendingIdsRef.current.add(messageId);
+      if (existingId) {
+        setMessageStatus(id, "sending");
       } else {
-        markMessageStatus(messageId, "failed");
+        appendMessage({
+          id,
+          text: trimmed,
+          sender: "user",
+          status: "sending",
+          timestamp: new Date(),
+        });
+      }
+
+      if (send(serializeWireMessage({ id, text: trimmed }))) {
+        pendingRef.current.set(id, Date.now());
+      } else {
+        setMessageStatus(id, "failed");
       }
     },
-    [markMessageStatus, send],
+    [appendMessage, clearTimers, send, setMessageStatus],
   );
 
   const retryMessage = useCallback(
     (id: string) => {
-      const failedMessage = messagesRef.current.find((item) => item.id === id);
-      if (failedMessage) {
-        sendMessage(failedMessage.text, id);
+      const message = messages.find((item) => item.id === id);
+
+      if (message) {
+        sendMessage(message.text, id);
       }
     },
-    [sendMessage],
+    [messages, sendMessage],
   );
 
+  // Исходящая очередь: всё, что не уехало, отправляется заново на onOpen.
   useEffect(() => {
-    sendUserMessageRef.current = sendMessage;
-  }, [sendMessage]);
-
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+    flushOutboxRef.current = () => {
+      for (const message of messages) {
+        if (message.sender === "user" && message.status === "failed") {
+          sendMessage(message.text, message.id);
+        }
+      }
+    };
+  }, [messages, sendMessage]);
 
   return {
     status,
