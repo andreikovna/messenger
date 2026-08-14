@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { ConnectionStatus } from "@/components/ConnectionStatus";
 import { MessageBubble } from "@/components/MessageBubble";
 import type { ChatMessage, ConnectionState } from "@/lib/types";
+
+const MS_IN_DAY = 24 * 60 * 60 * 1000;
 
 type ChatWidgetProps = {
   connectionStatus: ConnectionState;
@@ -11,6 +13,61 @@ type ChatWidgetProps = {
   onSend: (text: string) => void;
   onRetry: (id: string) => void;
 };
+
+type DayGroup = {
+  key: string;
+  label: string;
+  messages: ChatMessage[];
+};
+
+function toDayKey(date: Date): string {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function startOfDay(date: Date): number {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  ).getTime();
+}
+
+// Относительные подписи («Сегодня») заодно спасают от hydration mismatch:
+// сервер и клиент могут быть в разных таймзонах, но оба видят сообщение
+// как отправленное сегодня и рендерят одинаковый текст.
+function formatDayLabel(date: Date, now: Date): string {
+  const diffDays = Math.round((startOfDay(now) - startOfDay(date)) / MS_IN_DAY);
+
+  if (diffDays <= 0) return "Сегодня";
+  if (diffDays === 1) return "Вчера";
+
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
+}
+
+function groupByDay(messages: ChatMessage[]): DayGroup[] {
+  const now = new Date();
+
+  return messages.reduce<DayGroup[]>((groups, message) => {
+    const key = toDayKey(message.timestamp);
+    const lastGroup = groups.at(-1);
+
+    if (lastGroup?.key === key) {
+      lastGroup.messages.push(message);
+    } else {
+      groups.push({
+        key,
+        label: formatDayLabel(message.timestamp, now),
+        messages: [message],
+      });
+    }
+
+    return groups;
+  }, []);
+}
 
 export function ChatWidget({
   connectionStatus,
@@ -45,13 +102,21 @@ export function ChatWidget({
       ) : null}
 
       <div className="flex-1 space-y-4 overflow-y-auto px-4 py-5 md:px-5">
-        <div className="text-center">
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
-            12 мая 2025
-          </span>
-        </div>
-        {messages.map((message) => (
-          <MessageBubble key={message.id} message={message} onRetry={onRetry} />
+        {groupByDay(messages).map((group) => (
+          <Fragment key={group.key}>
+            <div className="text-center">
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
+                {group.label}
+              </span>
+            </div>
+            {group.messages.map((message) => (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                onRetry={onRetry}
+              />
+            ))}
+          </Fragment>
         ))}
         <div ref={messagesEndRef} />
       </div>
