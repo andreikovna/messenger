@@ -24,6 +24,9 @@ export function useWebSocket({
     null,
   );
   const shouldReconnectRef = useRef(true);
+  // connect планирует собственный повторный вызов, поэтому ссылается на себя
+  // через ref — прямая ссылка была бы обращением до объявления.
+  const connectRef = useRef<() => void>(() => {});
   const onMessageRef = useRef(onMessage);
   const onOpenRef = useRef(onOpen);
   const onCloseRef = useRef(onClose);
@@ -48,8 +51,6 @@ export function useWebSocket({
       wsRef.current.close();
       wsRef.current = null;
     }
-
-    setStatus("connecting");
 
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
@@ -79,13 +80,22 @@ export function useWebSocket({
       );
       reconnectAttemptRef.current += 1;
 
-      reconnectTimeoutRef.current = setTimeout(connect, delay);
+      // Пока ждём backoff, статус остаётся "нет связи" — попытка ещё
+      // не началась. "Подключение..." показываем в момент самой попытки.
+      reconnectTimeoutRef.current = setTimeout(() => {
+        setStatus("connecting");
+        connectRef.current();
+      }, delay);
     };
 
     ws.onerror = () => {
       ws.close();
     };
   }, [clearReconnectTimeout]);
+
+  useEffect(() => {
+    connectRef.current = connect;
+  }, [connect]);
 
   useEffect(() => {
     shouldReconnectRef.current = true;
