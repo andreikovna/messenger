@@ -61,13 +61,6 @@ export function ChatWidget({
         className="border-t border-slate-200 px-4 py-4 md:px-5"
       >
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            aria-label="Прикрепить файл"
-          >
-            <PaperclipIcon />
-          </button>
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
@@ -88,25 +81,6 @@ export function ChatWidget({
         </p>
       </form>
     </section>
-  );
-}
-
-function PaperclipIcon() {
-  return (
-    <svg
-      aria-hidden
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      viewBox="0 0 24 24"
-    >
-      <path
-        d="m16.5 7.5-7.8 7.8a3 3 0 1 1-4.2-4.2l8.5-8.5a4.5 4.5 0 0 1 6.4 6.4l-9 9a6 6 0 0 1-8.5-8.5l8.7-8.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }
 
