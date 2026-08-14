@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   MEETINGS_QUERY_KEY,
@@ -25,18 +25,6 @@ type MeetingModalContentProps = {
   meeting: Meeting;
   onClose: () => void;
 };
-
-function subscribeToClientMount() {
-  return () => {};
-}
-
-function getClientSnapshot() {
-  return true;
-}
-
-function getServerSnapshot() {
-  return false;
-}
 
 function toDateTimeLocalValue(isoDate: string) {
   const date = new Date(isoDate);
@@ -212,11 +200,13 @@ function MeetingModalContent({ meeting, onClose }: MeetingModalContentProps) {
 }
 
 export function MeetingModal({ meeting, onClose }: MeetingModalProps) {
-  const mounted = useSyncExternalStore(
-    subscribeToClientMount,
-    getClientSnapshot,
-    getServerSnapshot,
-  );
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    // Portal нужен document.body — рендерим только после монтирования.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only portal
+    setMounted(true);
+  }, []);
 
   if (!mounted || !meeting) {
     return null;
