@@ -97,7 +97,3 @@ export async function updateMeeting(
 
   return response.json();
 }
-
-export function getMeetingsForServer(): Meeting[] {
-  return getMeetings();
-}
